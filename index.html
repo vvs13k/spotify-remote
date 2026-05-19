@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spotify Remote</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; background: #0b0b0b; color: white; }
+    .topbar { position: sticky; top: 0; background: #111; padding: 12px; }
+    input { width: 100%; padding: 12px; border-radius: 8px; border: none; outline: none; background: #1c1c1c; color: white; }
+    .section { padding: 12px; }
+    .row { display: flex; overflow-x: auto; gap: 12px; }
+    .card { min-width: 140px; background: #151515; padding: 10px; border-radius: 12px; cursor: pointer; }
+    .card img { width: 100%; border-radius: 8px; }
+    .list-item { padding: 10px; border-bottom: 1px solid #222; cursor: pointer; }
+    .mini { position: fixed; bottom: 0; left: 0; right: 0; background: #111; padding: 10px; display: flex; justify-content: space-between; align-items: center; }
+    button { background: #1db954; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; color: white; }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <button onclick="login()">Login Spotify</button>
+  <input id="search" placeholder="Search songs..." oninput="search(this.value)" style="margin-top: 10px;" />
+</div>
+
+<div class="section">
+  <h3>Search Results</h3>
+  <div id="results"></div>
+</div>
+
+<div class="section">
+  <h3>Devices</h3>
+  <div id="devices"></div>
+</div>
+
+<div class="mini" id="mini">
+  <div id="now">Ready to play</div>
+  <div>
+    <button onclick="play()">Play</button>
+    <button onclick="pause()">Pause</button>
+    <button onclick="nextTrack()">Next</button>
+  </div>
+</div>
+
+<script>
+const CLIENT_ID = "4d326321f8a148c2805eb45e2ff2d654"; 
+const REDIRECT_URI = "https://vvs13k.github.io/spotify-remote/";
+
+let token = "";
+let activeDevice = "";
+
+function login() {
+  const scope = "user-read-playback-state user-modify-playback-state playlist-read-private";
+  window.location = `https://accounts.spotify.com/authorize?client_id=${CLIENT_ID}&response_type=token&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${scope}`;
+}
+
+function getTokenFromUrl() {
+  const hash = window.location.hash.substring(1);
+  const params = new URLSearchParams(hash);
+  token = params.get("access_token");
+  if (token) {
+    window.history.pushState("", document.title, window.location.pathname); // Cleans up the URL bar
+  }
+}
+
+async function search(q) {
+  if (!token || !q) return;
+  const res = await fetch(`https://api.spotify.com/v1/search?q=${q}&type=track`, {
+    headers: { Authorization: "Bearer " + token }
+  });
+  const data = await res.json();
+
+  const results = document.getElementById("results");
+  results.innerHTML = "";
+
+  data.tracks.items.forEach(t => {
+    const div = document.createElement("div");
+    div.className = "list-item";
+    div.innerText = t.name + " - " + t.artists[0].name;
+    div.onclick = () => playTrack(t.uri);
+    results.appendChild(div);
+  });
+}
+
+async function loadDevices() {
+  const res = await fetch("https://api.spotify.com/v1/me/player/devices", {
+    headers: { Authorization: "Bearer " + token }
+  });
+  const data = await res.json();
+
+  const box = document.getElementById("devices");
+  box.innerHTML = "";
+
+  data.devices.forEach(d => {
+    const div = document.createElement("div");
+    div.className = "list-item";
+    div.innerText = d.name + (d.is_active ? " (Active)" : "");
+    div.onclick = () => setDevice(d.id);
+    box.appendChild(div);
+  });
+}
+
+async function setDevice(id) {
+  activeDevice = id;
+  await fetch("https://api.spotify.com/v1/me/player", {
+    method: "PUT",
+    headers: {
+      Authorization: "Bearer " + token,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ device_ids: [id], play: false })
+  });
+  loadDevices(); 
+}
+
+async function playTrack(uri) {
+  if (!activeDevice) return alert("Select a device first from the list!");
+  await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${activeDevice}`, {
+    method: "PUT",
+    headers: {
+      Authorization: "Bearer " + token,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ uris: [uri] })
+  });
+}
+
+async function play() {
+  await fetch("https://api.spotify.com/v1/me/player/play", {
+    method: "PUT",
+    headers: { Authorization: "Bearer " + token }
+  });
+}
+
+async function pause() {
+  await fetch("https://api.spotify.com/v1/me/player/pause", {
+    method: "PUT",
+    headers: { Authorization: "Bearer " + token }
+  });
+}
+
+async function nextTrack() {
+  await fetch("https://api.spotify.com/v1/me/player/next", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token }
+  });
+}
+
+window.onload = () => {
+  getTokenFromUrl();
+  if (token) loadDevices();
+};
+</script>
+</body>
+</html>
